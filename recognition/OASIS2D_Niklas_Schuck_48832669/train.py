@@ -127,3 +127,72 @@ def evaluate(model, loader, criterion, device, num_classes):
             dices.append(md.item())
     return float(np.mean(losses) if losses else 0.0), float(np.mean(dices) if dices else 0.0)
 
+
+# main
+
+def main():
+
+    # Check if CUDA is available
+    print(f'Using device: {device}')
+
+    # Data
+    loaders = build_loaders(base_dir=base_dir, batch_size=batch_size, num_workers=2, pin_memory=True)
+
+    # Number of classes is inferred
+    num_classes = infer_num_classes(loaders["train"])
+    print(f"[info] inferred num_classes = {num_classes}")
+
+    # Model
+    model = ImprovedUNet(in_channels=1, num_classes=num_classes, base_ch=base_ch, depth=depth, dropout=dropout).to(device)
+
+    # Loss + Opt
+    criterion = nn.CrossEntropyLoss()
+    optimizer = Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    scheduler = ReduceLROnPlateau(optimizer, mode="max", factor=0.5, patience=3)
+
+    # Train
+    best_val_dice = -1.0
+    hist = {"train_loss": [], "val_loss": [], "val_dice": []}
+
+    os.makedirs("outputs", exist_ok=True)
+
+    for epoch in range(1, epochs + 1):
+        print(f"\nEpoch {epoch}/{epochs}")
+
+        tr_loss, tr_dice = run_epoch(model, loaders["train"], criterion, num_classes, optimizer)
+        val_loss, val_dice = evaluate(model, loaders["validate"], criterion, device, num_classes)
+
+        hist["train_loss"].append(tr_loss)
+        hist["val_loss"].append(val_loss)
+        hist["val_dice"].append(val_dice)
+
+        print(f"train: loss={tr_loss:.4f} dice={tr_dice:.4f}")
+        print(f"valid: loss={val_loss:.4f} dice={val_dice:.4f}")
+
+        # save best
+        if val_dice > best_val_dice:
+            best_val_dice = val_dice
+            ckpt_path = Path(out_dir / "best.ckpt")
+            torch.save(
+                {
+                    "model_state": model.state_dict(),
+                    "epoch": epoch,
+                    "val_dice": val_dice,
+                },
+                ckpt_path,
+            )
+            print(f"[info] saved best checkpoint to {ckpt_path}")
+
+        scheduler.step(val_dice)
+
+    save_curves(hist, out_dir)
+
+    # Test with best
+    ckpt = torch.load(out_dir / "best.ckpt", map_location=device)
+    model.load_state_dict(ckpt["model_state"])
+    test_loss, test_dice = evaluate(model, loaders["test"], criterion, device, num_classes)
+    print(f"\nTest: loss={test_loss:.4f} dice={test_dice:.4f}")
+
+
+if __name__ == "__main__":
+    main()
