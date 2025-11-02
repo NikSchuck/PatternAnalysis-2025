@@ -1,13 +1,16 @@
-from typing import List, Tuple
+# Residual double-conv blocks with InstanceNorm + LeakyReLU
+# Returns raw logits for CrossEntropyLoss
+
+from typing import List
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 # build                
 class ConvBNAct(nn.Module):
-    def __init__(self, in_ch, out_ch, k=3, p=1, d=1, dropout=0.0):
+    def __init__(self, in_ch, out_ch, kernel_size=3, padding=1, dilation=1, dropout=0.0):
         super().__init__()
-        self.conv = nn.Conv2d(in_ch, out_ch, kernel_size=k, padding=p, dilation=d, bias=False)
+        self.conv = nn.Conv2d(in_ch, out_ch, kernel_size=kernel_size, padding=padding, dilation=dilation, bias=False)
         self.norm = nn.InstanceNorm2d(out_ch, affine=True)
         self.act = nn.LeakyReLU(0.2, inplace=True)
         self.do = nn.Dropout2d(dropout) if dropout > 0 else nn.Identity()
@@ -21,11 +24,11 @@ class ConvBNAct(nn.Module):
 
 class ResidualBlock(nn.Module):
     """Two 3x3 convs + residual. Projects skip if channels differ."""
-    def __init__(self, in_ch: int, out_ch: int, dropout: float = 0.0, use_dilation: bool = False):
+    def __init__(self, in_ch, out_ch, dropout=0.0, use_dilation=False):
         super().__init__()
-        d = 2 if use_dilation else 1
-        self.conv1 = ConvBNAct(in_ch, out_ch, k=3, p=d, d=d, dropout=dropout)
-        self.conv2 = ConvBNAct(out_ch, out_ch, k=3, p=1, d=1, dropout=dropout)
+        dilation = 2 if use_dilation else 1
+        self.conv1 = ConvBNAct(in_ch, out_ch, kernel_size=3, padding=dilation, dilation=dilation, dropout=dropout)
+        self.conv2 = ConvBNAct(out_ch, out_ch, kernel_size=3, padding=1, dilation=1, dropout=dropout)
         self.proj = nn.Identity()
         if in_ch != out_ch:
             self.proj = nn.Sequential(
@@ -62,7 +65,7 @@ class UpBlock(nn.Module):
 
     def forward(self, x, skip):
         x = self.up(x)
-        # handle odd shapes
+        # odd shapes
         if x.shape[-1] != skip.shape[-1] or x.shape[-2] != skip.shape[-2]:
             x = F.interpolate(x, size=skip.shape[-2:], mode="bilinear", align_corners=False)
         x = torch.cat([x, skip], dim=1)
@@ -114,7 +117,7 @@ class ImprovedUNet(nn.Module):
         for up in self.ups:
             s = skips.pop()
             x = up(x, s)
-        logits = self.head(x)  # raw logits, shape (B, num_classes, H, W)
+        logits = self.head(x)  # shape (B, num_classes, H, W)
         return logits
 
 # test
