@@ -78,7 +78,7 @@ class ImprovedUNet(nn.Module):
     """
     U-Net with residual blocks.
     """
-    def __init__(self, in_channels=1, num_classes=4, base_ch=32, depth=4, dropout=0.1):
+    def __init__(self, in_channels=1, num_classes=2, base_ch=32, depth=4, dropout=0.1):
         super().__init__()
         assert depth >= 3, "depth >= 3 recommended"
 
@@ -122,7 +122,7 @@ class ImprovedUNet(nn.Module):
 
 # test
 if __name__ == "__main__":
-    net = ImprovedUNet(in_channels=1, num_classes=4, base_ch=32, depth=4, dropout=0.1)
+    net = ImprovedUNet(in_channels=1, num_classes=2, base_ch=32, depth=4, dropout=0.1)
     x = torch.randn(2, 1, 128, 128)
     y = net(x)
     print("logits:", tuple(y.shape))

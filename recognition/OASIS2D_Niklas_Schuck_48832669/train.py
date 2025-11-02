@@ -16,7 +16,7 @@ from dataset import build_loaders
 
 base_dir = Path(r"C:\Users\nschu\OneDrive\Desktop\COMP3710\Final Report\OASIS Dataset") # local training
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-epochs = 2
+epochs = 4
 batch_size = 8
 lr = 1e-3
 weight_decay = 1e-4
@@ -33,10 +33,13 @@ torch.manual_seed(seed)
 if torch.cuda.is_available():
     torch.cuda.manual_seed_all(seed)
 
-def infer_num_classes(dl):
-    """ peek a few batches to infer max label """
+def infer_num_classes(pick_set):
+    """ 
+    peek a few batches to infer max label
+    input: loader["train" "test" or "validate"] to access dataset
+    """
     max_label = 0
-    it = iter(dl)
+    it = iter(pick_set)
     for i in range(3):
         try:
             batch = next(it)
@@ -48,9 +51,7 @@ def infer_num_classes(dl):
 
 
 def dice_per_class(logits, targets, num_classes):
-    """
-    Computes Dice per class on (B,C,H,W) logits and (B,H,W) targets.
-    """
+    """ Computes Dice per class on (B,C,H,W) logits and (B,H,W) targets. """
     with torch.no_grad():
         preds = torch.argmax(logits, dim=1)  # (B,H,W)
         dices = []
@@ -68,6 +69,7 @@ def dice_per_class(logits, targets, num_classes):
 
 
 def save_curves(hist, out_dir: Path):
+    """ training curves for model visualisation """
     out_dir.mkdir(parents=True, exist_ok=True)
     fig = plt.figure(figsize=(8, 4))
     xs = range(1, len(hist["train_loss"]) + 1)
@@ -84,6 +86,7 @@ def save_curves(hist, out_dir: Path):
 # training
 
 def run_epoch(model, loader, criterion, num_classes, optimizer, device=device):
+    """ run one epoch """
     is_train = optimizer is not None
     model.train(is_train)
     total_loss = 0.0
@@ -91,8 +94,8 @@ def run_epoch(model, loader, criterion, num_classes, optimizer, device=device):
     dices = []
 
     for batch in tqdm(loader, desc="train" if is_train else "eval"):
-        x = batch["image"].to(device, non_blocking=True)
-        y = batch["mask"].to(device, non_blocking=True)
+        x = batch["image"].to(device)
+        y = batch["mask"].to(device)
 
         logits = model(x)
         loss = criterion(logits, y)
@@ -114,6 +117,7 @@ def run_epoch(model, loader, criterion, num_classes, optimizer, device=device):
 
 
 def evaluate(model, loader, criterion, device, num_classes):
+    """ evaluates the mean loss and dice values from the run """
     model.eval()
     losses, dices = [], []
     with torch.no_grad():
@@ -125,7 +129,7 @@ def evaluate(model, loader, criterion, device, num_classes):
             losses.append(loss.item())
             md, _ = dice_per_class(logits, y, num_classes)
             dices.append(md.item())
-    return float(np.mean(losses) if losses else 0.0), float(np.mean(dices) if dices else 0.0)
+    return np.mean(losses), np.mean(dices)
 
 
 # main
